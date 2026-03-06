@@ -15,6 +15,15 @@ pub mod solana_token_faucet {
         f.cooldown_seconds = cooldown_seconds;
         f.total_distributed = 0;
         f.bump = ctx.bumps.faucet;
+
+        emit!(FaucetInitialized {
+            faucet: f.key(),
+            authority: f.authority,
+            mint: f.mint,
+            drip_amount: f.amount_per_claim,
+            cooldown: f.cooldown_seconds,
+        });
+
         Ok(())
     }
 
@@ -62,6 +71,14 @@ pub mod solana_token_faucet {
 
         let faucet = &mut ctx.accounts.faucet;
         faucet.total_distributed = faucet.total_distributed.checked_add(faucet.amount_per_claim).ok_or(FaucetError::Overflow)?;
+
+        emit!(TokensClaimed {
+            faucet: faucet.key(),
+            claimer: ctx.accounts.claimer.key(),
+            amount: faucet.amount_per_claim,
+            total_distributed: faucet.total_distributed,
+        });
+
         Ok(())
     }
 }
@@ -129,6 +146,23 @@ pub struct ClaimRecord {
     pub last_claim_ts: i64,
     pub total_claimed: u64,
     pub bump: u8,
+}
+
+#[event]
+pub struct FaucetInitialized {
+    pub faucet: Pubkey,
+    pub authority: Pubkey,
+    pub mint: Pubkey,
+    pub drip_amount: u64,
+    pub cooldown: i64,
+}
+
+#[event]
+pub struct TokensClaimed {
+    pub faucet: Pubkey,
+    pub claimer: Pubkey,
+    pub amount: u64,
+    pub total_distributed: u64,
 }
 
 #[error_code]
