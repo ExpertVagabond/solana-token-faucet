@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token_interface::{Mint, TokenInterface, TokenAccount, TransferChecked, transfer_checked};
 
 declare_id!("GsHPNhJtQ23Nj2duABZNDAdn1ri2kjxkeTXqH6SUSN1v");
 
@@ -28,14 +28,15 @@ pub mod solana_token_faucet {
     }
 
     pub fn fund_faucet(ctx: Context<FundFaucet>, amount: u64) -> Result<()> {
-        token::transfer(CpiContext::new(
+        transfer_checked(CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.authority_token_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.vault.to_account_info(),
                 authority: ctx.accounts.authority.to_account_info(),
             },
-        ), amount)?;
+        ), amount, ctx.accounts.mint.decimals)?;
         Ok(())
     }
 
@@ -54,15 +55,16 @@ pub mod solana_token_faucet {
         let mint_key = faucet.mint;
         let seeds: &[&[u8]] = &[b"faucet", mint_key.as_ref(), &[faucet.bump]];
 
-        token::transfer(CpiContext::new_with_signer(
+        transfer_checked(CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.claimer_token_account.to_account_info(),
                 authority: ctx.accounts.faucet.to_account_info(),
             },
             &[seeds],
-        ), faucet.amount_per_claim)?;
+        ), faucet.amount_per_claim, ctx.accounts.mint.decimals)?;
 
         record.wallet = ctx.accounts.claimer.key();
         record.faucet = ctx.accounts.faucet.key();
@@ -87,12 +89,12 @@ pub mod solana_token_faucet {
 pub struct InitializeFaucet<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub mint: Account<'info, Mint>,
+    pub mint: InterfaceAccount<'info, Mint>,
     #[account(init, payer = authority, space = 8 + Faucet::INIT_SPACE, seeds = [b"faucet", mint.key().as_ref()], bump)]
     pub faucet: Account<'info, Faucet>,
     #[account(init, payer = authority, token::mint = mint, token::authority = faucet, seeds = [b"vault", faucet.key().as_ref()], bump)]
-    pub vault: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
@@ -103,11 +105,13 @@ pub struct FundFaucet<'info> {
     pub authority: Signer<'info>,
     #[account(mut, seeds = [b"faucet", faucet.mint.as_ref()], bump = faucet.bump, has_one = authority)]
     pub faucet: Account<'info, Faucet>,
+    #[account(constraint = mint.key() == faucet.mint)]
+    pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, seeds = [b"vault", faucet.key().as_ref()], bump, token::mint = faucet.mint, token::authority = faucet)]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = faucet.mint, token::authority = authority)]
-    pub authority_token_account: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
+    pub authority_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[derive(Accounts)]
@@ -116,14 +120,16 @@ pub struct ClaimTokens<'info> {
     pub claimer: Signer<'info>,
     #[account(mut, seeds = [b"faucet", faucet.mint.as_ref()], bump = faucet.bump)]
     pub faucet: Account<'info, Faucet>,
+    #[account(constraint = mint.key() == faucet.mint)]
+    pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, seeds = [b"vault", faucet.key().as_ref()], bump, token::mint = faucet.mint, token::authority = faucet)]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
     #[account(init_if_needed, payer = claimer, space = 8 + ClaimRecord::INIT_SPACE,
         seeds = [b"claim", faucet.key().as_ref(), claimer.key().as_ref()], bump)]
     pub claim_record: Account<'info, ClaimRecord>,
     #[account(mut, token::mint = faucet.mint, token::authority = claimer)]
-    pub claimer_token_account: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
+    pub claimer_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
