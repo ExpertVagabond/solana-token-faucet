@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{Mint, TokenInterface, TokenAccount, TransferChecked, transfer_checked};
+use anchor_spl::token_interface::{
+    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+};
 
 declare_id!("GsHPNhJtQ23Nj2duABZNDAdn1ri2kjxkeTXqH6SUSN1v");
 
@@ -7,7 +9,11 @@ declare_id!("GsHPNhJtQ23Nj2duABZNDAdn1ri2kjxkeTXqH6SUSN1v");
 pub mod solana_token_faucet {
     use super::*;
 
-    pub fn initialize_faucet(ctx: Context<InitializeFaucet>, amount_per_claim: u64, cooldown_seconds: i64) -> Result<()> {
+    pub fn initialize_faucet(
+        ctx: Context<InitializeFaucet>,
+        amount_per_claim: u64,
+        cooldown_seconds: i64,
+    ) -> Result<()> {
         let f = &mut ctx.accounts.faucet;
         f.authority = ctx.accounts.authority.key();
         f.mint = ctx.accounts.mint.key();
@@ -28,15 +34,19 @@ pub mod solana_token_faucet {
     }
 
     pub fn fund_faucet(ctx: Context<FundFaucet>, amount: u64) -> Result<()> {
-        transfer_checked(CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            TransferChecked {
-                from: ctx.accounts.authority_token_account.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.vault.to_account_info(),
-                authority: ctx.accounts.authority.to_account_info(),
-            },
-        ), amount, ctx.accounts.mint.decimals)?;
+        transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.authority_token_account.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
+                },
+            ),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
         Ok(())
     }
 
@@ -46,33 +56,52 @@ pub mod solana_token_faucet {
         let clock = Clock::get()?;
 
         if record.last_claim_ts != 0 {
-            let elapsed = clock.unix_timestamp.checked_sub(record.last_claim_ts).ok_or(FaucetError::Overflow)?;
-            require!(elapsed >= faucet.cooldown_seconds, FaucetError::CooldownNotElapsed);
+            let elapsed = clock
+                .unix_timestamp
+                .checked_sub(record.last_claim_ts)
+                .ok_or(FaucetError::Overflow)?;
+            require!(
+                elapsed >= faucet.cooldown_seconds,
+                FaucetError::CooldownNotElapsed
+            );
         }
 
-        require!(ctx.accounts.vault.amount >= faucet.amount_per_claim, FaucetError::InsufficientBalance);
+        require!(
+            ctx.accounts.vault.amount >= faucet.amount_per_claim,
+            FaucetError::InsufficientBalance
+        );
 
         let mint_key = faucet.mint;
         let seeds: &[&[u8]] = &[b"faucet", mint_key.as_ref(), &[faucet.bump]];
 
-        transfer_checked(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            TransferChecked {
-                from: ctx.accounts.vault.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.claimer_token_account.to_account_info(),
-                authority: ctx.accounts.faucet.to_account_info(),
-            },
-            &[seeds],
-        ), faucet.amount_per_claim, ctx.accounts.mint.decimals)?;
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.claimer_token_account.to_account_info(),
+                    authority: ctx.accounts.faucet.to_account_info(),
+                },
+                &[seeds],
+            ),
+            faucet.amount_per_claim,
+            ctx.accounts.mint.decimals,
+        )?;
 
         record.wallet = ctx.accounts.claimer.key();
         record.faucet = ctx.accounts.faucet.key();
         record.last_claim_ts = clock.unix_timestamp;
-        record.total_claimed = record.total_claimed.checked_add(faucet.amount_per_claim).ok_or(FaucetError::Overflow)?;
+        record.total_claimed = record
+            .total_claimed
+            .checked_add(faucet.amount_per_claim)
+            .ok_or(FaucetError::Overflow)?;
 
         let faucet = &mut ctx.accounts.faucet;
-        faucet.total_distributed = faucet.total_distributed.checked_add(faucet.amount_per_claim).ok_or(FaucetError::Overflow)?;
+        faucet.total_distributed = faucet
+            .total_distributed
+            .checked_add(faucet.amount_per_claim)
+            .ok_or(FaucetError::Overflow)?;
 
         emit!(TokensClaimed {
             faucet: faucet.key(),
